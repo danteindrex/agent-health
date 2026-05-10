@@ -1,5 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -232,6 +234,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "verify_identity": return await identity.verifyIdentity(args);
       case "availability_query": return await scheduling.availabilityQuery(args);
       case "appointment_book": return await scheduling.appointmentBook(args);
+      case "appointment_cancel": return await scheduling.appointmentCancel(args);
       case "encounter_checkin": return await clinicFlow.encounterCheckIn(args);
       case "assign_room": return await clinicFlow.assignRoom(args);
       case "wa_template_dispatch": return await communication.waTemplateDispatch(args);
@@ -255,9 +258,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 async function run() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Healthcare Automation MCP Server running on stdio");
+  const PORT = process.env.PORT;
+  
+  if (PORT) {
+    // SSE Mode for Cloud Deployment
+    const app = express();
+    let transport: SSEServerTransport;
+
+    app.get("/sse", async (req: any, res: any) => {
+      transport = new SSEServerTransport("/messages", res);
+      await server.connect(transport);
+    });
+
+    app.post("/messages", async (req: any, res: any) => {
+      if (transport) {
+        await transport.handlePostMessage(req, res);
+      } else {
+        res.status(400).send("Session not initialized");
+      }
+    });
+
+    const port = parseInt(PORT);
+    app.listen(port, "0.0.0.0", () => {
+      console.error(`Healthcare MCP Server running on SSE at http://0.0.0.0:${port}/sse`);
+    });
+    
+  } else {
+    // Stdio Mode for Local Testing
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("Healthcare Automation MCP Server running on stdio");
+  }
 }
 
 run().catch((error) => {

@@ -44,4 +44,20 @@ export async function appointmentBook(args) {
         throw new Error(`FHIR Booking Error: ${error}`);
     }
 }
+export async function appointmentCancel(args) {
+    const { appointment_id } = args;
+    try {
+        const response = await client.patch({
+            resourceType: "Appointment",
+            id: appointment_id,
+            jsonPatch: [
+                { op: "replace", path: "/status", value: "cancelled" }
+            ]
+        });
+        return { content: [{ type: "text", text: `Appointment ${appointment_id} cancelled successfully.` }] };
+    }
+    catch (error) {
+        throw new Error(`FHIR Cancellation Error: ${error}`);
+    }
+}
 //# sourceMappingURL=scheduling.js.map
