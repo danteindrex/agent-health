@@ -175,12 +175,14 @@ const TOOLS = [
         }
     },
     {
-        name: "waitTime_predictor",
-        description: "Predict wait times for a specific location.",
+        name: "clinic_analytics",
+        description: "Get high-level clinic metrics for a specific date (e.g. appointment counts).",
         inputSchema: {
             type: "object",
-            properties: { location_id: { type: "string" } },
-            required: ["location_id"]
+            properties: {
+                date: { type: "string", description: "ISO date string (YYYY-MM-DD)" }
+            },
+            required: ["date"]
         }
     },
     // HITL
@@ -225,7 +227,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             case "observation_post": return await clinical.observationPost(args);
             case "insurance_check": return await clinical.insuranceCheck(args);
             case "log_audit_trail": return await clinical.logAuditTrail(args);
-            case "waitTime_predictor": return await clinical.waitTimePredictor(args);
+            case "clinic_analytics": return await clinical.clinicAnalytics(args);
             case "hitl_pause_trigger": return await clinical.hitlPauseTrigger(args);
             case "hitl_review_poll": return await clinical.hitlReviewPoll(args);
             default:

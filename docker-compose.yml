@@ -1,0 +1,16 @@
+services:
+  mcp-server:
+    build: .
+    environment:
+      - FHIR_SERVER_URL=http://fhir-server:8080/fhir
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+    depends_on:
+      - fhir-server
+
+  fhir-server:
+    image: hapiproject/hapi:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - HAPI_FHIR_VERSION=R4
+      - HAPI_FHIR_DATABASE_TYPE=DERBY
