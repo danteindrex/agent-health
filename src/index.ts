@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
 import {
   CallToolRequestSchema,
@@ -16,17 +17,50 @@ import * as clinical from "./tools/clinical.js";
 
 dotenv.config();
 
-const server = new Server(
-  {
-    name: "healthcare-automation-server",
-    version: "1.0.0",
-  },
-  {
-    capabilities: {
-      tools: {},
-    },
+const MCP_AUTH_TOKEN = process.env.MCP_AUTH_TOKEN;
+
+function authMiddleware(req: any, res: any, next: any) {
+  if (!MCP_AUTH_TOKEN) {
+    res.status(503).json({
+      jsonrpc: "2.0",
+      error: { code: -32001, message: "Server authentication not configured" },
+      id: null,
+    });
+    return;
   }
-);
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.status(401).json({
+      jsonrpc: "2.0",
+      error: { code: -32001, message: "Missing Authorization header" },
+      id: null,
+    });
+    return;
+  }
+
+  const [type, token] = authHeader.split(' ');
+  if (type?.toLowerCase() !== 'bearer' || !token) {
+    res.status(401).json({
+      jsonrpc: "2.0",
+      error: { code: -32001, message: "Invalid Authorization header format" },
+      id: null,
+    });
+    return;
+  }
+
+  if (token !== MCP_AUTH_TOKEN) {
+    res.status(401).json({
+      jsonrpc: "2.0",
+      error: { code: -32001, message: "Invalid authentication token" },
+      id: null,
+    });
+    return;
+  }
+
+  req.auth = { clientId: 'authenticated-client', scopes: ['mcp:tools'] };
+  next();
+}
 
 const TOOLS: any[] = [
   // Identity
@@ -221,58 +255,134 @@ const TOOLS: any[] = [
   }
 ];
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: TOOLS,
-}));
-
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  try {
-    switch (name) {
-      case "patient_upsert": return await identity.patientUpsert(args);
-      case "verify_identity": return await identity.verifyIdentity(args);
-      case "availability_query": return await scheduling.availabilityQuery(args);
-      case "appointment_book": return await scheduling.appointmentBook(args);
-      case "appointment_cancel": return await scheduling.appointmentCancel(args);
-      case "encounter_checkin": return await clinicFlow.encounterCheckIn(args);
-      case "assign_room": return await clinicFlow.assignRoom(args);
-      case "wa_template_dispatch": return await communication.waTemplateDispatch(args);
-      case "wa_interactive_session": return await communication.waInteractiveSession(args);
-      case "secure_email_send": return await communication.secureEmailSend(args);
-      case "observation_post": return await clinical.observationPost(args);
-      case "insurance_check": return await clinical.insuranceCheck(args);
-      case "log_audit_trail": return await clinical.logAuditTrail(args);
-      case "clinic_analytics": return await clinical.clinicAnalytics(args);
-      case "hitl_pause_trigger": return await clinical.hitlPauseTrigger(args);
-      case "hitl_review_poll": return await clinical.hitlReviewPoll(args);
-      default:
-        throw new Error(`Tool not found: ${name}`);
+function createServer() {
+  const server = new Server(
+    {
+      name: "healthcare-automation-server",
+      version: "1.0.0",
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
     }
-  } catch (error: any) {
-    return {
-      content: [{ type: "text", text: `Error: ${error.message}` }],
-      isError: true,
-    };
-  }
-});
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: TOOLS,
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+
+    try {
+      switch (name) {
+        case "patient_upsert": return await identity.patientUpsert(args);
+        case "verify_identity": return await identity.verifyIdentity(args);
+        case "availability_query": return await scheduling.availabilityQuery(args);
+        case "appointment_book": return await scheduling.appointmentBook(args);
+        case "appointment_cancel": return await scheduling.appointmentCancel(args);
+        case "encounter_checkin": return await clinicFlow.encounterCheckIn(args);
+        case "assign_room": return await clinicFlow.assignRoom(args);
+        case "wa_template_dispatch": return await communication.waTemplateDispatch(args);
+        case "wa_interactive_session": return await communication.waInteractiveSession(args);
+        case "secure_email_send": return await communication.secureEmailSend(args);
+        case "observation_post": return await clinical.observationPost(args);
+        case "insurance_check": return await clinical.insuranceCheck(args);
+        case "log_audit_trail": return await clinical.logAuditTrail(args);
+        case "clinic_analytics": return await clinical.clinicAnalytics(args);
+        case "hitl_pause_trigger": return await clinical.hitlPauseTrigger(args);
+        case "hitl_review_poll": return await clinical.hitlReviewPoll(args);
+        default:
+          throw new Error(`Tool not found: ${name}`);
+      }
+    } catch (error: any) {
+      return {
+        content: [{ type: "text", text: `Error: ${error.message}` }],
+        isError: true,
+      };
+    }
+  });
+
+  return server;
+}
 
 async function run() {
   const PORT = process.env.PORT;
   
   if (PORT) {
-    // SSE Mode for Cloud Deployment
     const app = express();
-    let transport: SSEServerTransport;
+    app.use(express.json());
+    const sseSessions = new Map<string, { transport: SSEServerTransport; server: Server }>();
 
-    app.get("/sse", async (req: any, res: any) => {
-      transport = new SSEServerTransport("/messages", res);
+    app.post("/mcp", authMiddleware, async (req: any, res: any) => {
+      const server = createServer();
+
+      try {
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+        });
+
+        await server.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+
+        res.on("close", () => {
+          transport.close().catch(() => undefined);
+          server.close().catch(() => undefined);
+        });
+      } catch (error) {
+        console.error("Failed to handle Streamable HTTP request:", error);
+        if (!res.headersSent) {
+          res.status(500).json({
+            jsonrpc: "2.0",
+            error: {
+              code: -32603,
+              message: "Internal server error",
+            },
+            id: null,
+          });
+        }
+      }
+    });
+
+    app.get("/mcp", authMiddleware, (_req: any, res: any) => {
+      res.status(405).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Method not allowed.",
+        },
+        id: null,
+      });
+    });
+
+    app.delete("/mcp", authMiddleware, (_req: any, res: any) => {
+      res.status(405).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Method not allowed.",
+        },
+        id: null,
+      });
+    });
+
+    app.get("/sse", authMiddleware, async (req: any, res: any) => {
+      const server = createServer();
+      const transport = new SSEServerTransport("/messages", res);
+      sseSessions.set(transport.sessionId, { transport, server });
+      res.on("close", () => {
+        sseSessions.delete(transport.sessionId);
+        server.close().catch(() => undefined);
+      });
       await server.connect(transport);
     });
 
-    app.post("/messages", async (req: any, res: any) => {
-      if (transport) {
-        await transport.handlePostMessage(req, res);
+    app.post("/messages", authMiddleware, async (req: any, res: any) => {
+      const sessionId = String(req.query.sessionId || "");
+      const session = sseSessions.get(sessionId);
+      if (session) {
+        await session.transport.handlePostMessage(req, res, req.body);
       } else {
         res.status(400).send("Session not initialized");
       }
@@ -280,11 +390,11 @@ async function run() {
 
     const port = parseInt(PORT);
     app.listen(port, "0.0.0.0", () => {
-      console.error(`Healthcare MCP Server running on SSE at http://0.0.0.0:${port}/sse`);
+      console.error(`Healthcare MCP Server running on Streamable HTTP at http://0.0.0.0:${port}/mcp`);
     });
     
   } else {
-    // Stdio Mode for Local Testing
+    const server = createServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
     console.error("Healthcare Automation MCP Server running on stdio");

@@ -18,7 +18,7 @@ async function main() {
   // 2. Connect to the MCP Server
   const transport = new StdioClientTransport({
     command: "node",
-    args: [join(__dirname, "../build/index.js")],
+    args: [join(__dirname, "../dist/index.js")],
   });
 
   const client = new Client(

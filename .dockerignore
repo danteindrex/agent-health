@@ -1,0 +1,7 @@
+.git
+.env
+node_modules
+build
+dist
+excalidraw.log
+npm-debug.log

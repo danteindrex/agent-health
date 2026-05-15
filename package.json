@@ -2,11 +2,11 @@
   "name": "agent-health",
   "version": "1.0.0",
   "description": "Healthcare Automation MCP Server",
-  "main": "build/index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node build/index.js",
+    "start": "node dist/index.js",
     "dev": "tsx src/index.ts"
   },
   "keywords": [],
@@ -21,6 +21,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.16.0",
     "dotenv": "^17.4.2",
+    "express": "^5.2.1",
     "fhir-kit-client": "^2.0.0",
     "nodemailer": "^8.0.7"
   },

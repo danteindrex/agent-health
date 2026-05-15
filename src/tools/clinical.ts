@@ -2,6 +2,7 @@ import { Client } from "fhir-kit-client";
 
 const FHIR_URL = process.env.FHIR_SERVER_URL || "https://hapi.fhir.org/baseR4";
 const client = new Client({ baseUrl: FHIR_URL });
+const ALLOW_DEMO_MOCKS = process.env.ALLOW_DEMO_MOCKS === "true";
 
 async function logAudit(action: string, patient_id: string, outcome: "0" | "4" | "8" = "0") {
   try {
@@ -58,7 +59,7 @@ export async function insuranceCheck(args: any) {
     }
     return { content: [{ type: "text", text: "No active insurance coverage found in record." }] };
   } catch (e) {
-    return { content: [{ type: "text", text: "Insurance status: UNKNOWN (FHIR Search failed)" }] };
+    throw new Error(`Insurance lookup failed: ${e}`);
   }
 }
 
@@ -70,7 +71,11 @@ export async function logAuditTrail(args: any) {
 
 export async function waitTimePredictor(args: any) {
   const { location_id } = args;
-  // This could query Encounters with status 'in-progress'
+  if (!ALLOW_DEMO_MOCKS) {
+    throw new Error(
+      `Wait time predictor is not implemented for production use${location_id ? ` for location ${location_id}` : ""}.`
+    );
+  }
   return { content: [{ type: "text", text: "Estimated wait time: 12 minutes based on current queue." }] };
 }
 
@@ -86,7 +91,7 @@ export async function clinicAnalytics(args: any) {
     return { 
       content: [{ 
         type: "text", 
-        text: `Clinic Metrics for ${date}: Total Appointments: ${response.total || 0}. Patient Satisfaction: 4.8/5.0 (Sampled).` 
+        text: `Clinic Metrics for ${date}: Total Appointments: ${response.total || 0}.`
       }] 
     };
   } catch (e) {
@@ -95,12 +100,18 @@ export async function clinicAnalytics(args: any) {
 }
 export async function hitlPauseTrigger(args: any) {
   const { reason, payload } = args;
-  // This would typically write to a Task resource for clinician dashboard
+  if (!ALLOW_DEMO_MOCKS) {
+    throw new Error(
+      `HITL pause is not implemented for production use. Reason received: ${reason}. Payload present: ${Boolean(payload)}.`
+    );
+  }
   return { content: [{ type: "text", text: `Workflow paused for ${reason}. Task ID: task_${Date.now()}` }] };
 }
 
 export async function hitlReviewPoll(args: any) {
   const { taskId } = args;
-  // Mock polling of Task resource status
+  if (!ALLOW_DEMO_MOCKS) {
+    throw new Error(`HITL review polling is not implemented for production use. Task ID: ${taskId}.`);
+  }
   return { content: [{ type: "text", text: "Status: PENDING_REVIEW" }] };
 }

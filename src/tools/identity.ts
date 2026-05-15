@@ -1,3 +1,4 @@
+import axios from "axios";
 import { Client } from "fhir-kit-client";
 
 const FHIR_URL = process.env.FHIR_SERVER_URL || "https://hapi.fhir.org/baseR4";
@@ -30,10 +31,32 @@ export async function patientUpsert(args: any) {
 
 export async function verifyIdentity(args: any) {
   const { phone, otp } = args;
-  // Mock verification logic
-  if (otp === "123456") {
-    return { content: [{ type: "text", text: "Identity Verified" }] };
-  } else {
-    throw new Error("Invalid OTP");
+
+  if (!phone || !otp) {
+    return {
+      content: [{ type: "text", text: "Phone and OTP are required" }],
+      isError: true,
+    };
   }
+
+  const OTP_SERVICE_URL = process.env.OTP_SERVICE_URL;
+  const OTP_SERVICE_API_KEY = process.env.OTP_SERVICE_API_KEY;
+
+  if (!OTP_SERVICE_URL || !OTP_SERVICE_API_KEY) {
+    throw new Error(
+      "OTP service not configured. Set OTP_SERVICE_URL and OTP_SERVICE_API_KEY environment variables."
+    );
+  }
+
+  const response = await axios.post(
+    `${OTP_SERVICE_URL}/verify`,
+    { phone, otp },
+    { headers: { Authorization: `Bearer ${OTP_SERVICE_API_KEY}` } }
+  );
+
+  if (response.data.valid) {
+    return { content: [{ type: "text", text: "Identity Verified" }] };
+  }
+
+  return { content: [{ type: "text", text: "Invalid OTP" }], isError: true };
 }

@@ -21,7 +21,7 @@ const model = new ChatGoogleGenerativeAI({
 // 2. Setup MCP Client Connection
 const transport = new StdioClientTransport({
   command: "node",
-  args: [join(__dirname, "../build/index.js")],
+  args: [join(__dirname, "../dist/index.js")],
 });
 
 const mcpClient = new Client(

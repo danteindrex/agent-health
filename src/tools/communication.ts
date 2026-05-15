@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 
 const WHAPI_TOKEN = process.env.WHAPI_TOKEN;
 const WHAPI_URL = "https://gate.whapi.cloud/messages/text";
+const ALLOW_DEMO_MOCKS = process.env.ALLOW_DEMO_MOCKS === "true";
 
 const mailConfig = {
   host: process.env.SMTP_HOST || "smtp.example.com",
@@ -20,8 +21,11 @@ export async function waTemplateDispatch(args: any) {
   const { phone, templateId, parameters } = args;
   
   if (!WHAPI_TOKEN) {
-    console.warn("WHAPI_TOKEN missing. Mocking dispatch.");
-    return { content: [{ type: "text", text: `[MOCK] WA Template ${templateId} to ${phone}` }] };
+    if (ALLOW_DEMO_MOCKS) {
+      console.warn("WHAPI_TOKEN missing. Returning demo response.");
+      return { content: [{ type: "text", text: `[DEMO] WA Template ${templateId} to ${phone}` }] };
+    }
+    throw new Error("WHAPI_TOKEN is not configured.");
   }
 
   try {
@@ -41,11 +45,16 @@ export async function waTemplateDispatch(args: any) {
 
 export async function waInteractiveSession(args: any) {
   const { phone, buttons, bodyText } = args;
-  // Whapi support for buttons
+  if (!ALLOW_DEMO_MOCKS) {
+    throw new Error(
+      "Interactive WhatsApp sessions are not implemented for production use. Set ALLOW_DEMO_MOCKS=true for demo responses or integrate a real provider."
+    );
+  }
+
   return { 
     content: [{ 
       type: "text", 
-      text: `Interactive WhatsApp session (Buttons: ${buttons.join("/")}) started with ${phone}` 
+      text: `[DEMO] Interactive WhatsApp session (Buttons: ${buttons.join("/")}) started with ${phone}${bodyText ? `: ${bodyText}` : ""}` 
     }] 
   };
 }
@@ -64,10 +73,9 @@ export async function secureEmailSend(args: any) {
     
     return { content: [{ type: "text", text: `Secure email sent: ${info.messageId}` }] };
   } catch (error: any) {
-    // If SMTP is not configured, fallback to log for demo/local testing
-    if (error.code === 'ECONNREFUSED' || !process.env.SMTP_USER) {
-        console.warn("SMTP not configured. Mocking email send.");
-        return { content: [{ type: "text", text: `[MOCK] Email sent to ${to}` }] };
+    if ((error.code === "ECONNREFUSED" || !process.env.SMTP_USER) && ALLOW_DEMO_MOCKS) {
+        console.warn("SMTP not configured. Returning demo response.");
+        return { content: [{ type: "text", text: `[DEMO] Email sent to ${to}` }] };
     }
     throw new Error(`Email Error: ${error.message}`);
   }
