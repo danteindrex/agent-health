@@ -9,6 +9,10 @@ RUN npm run build
 # Stage 2: Runtime
 FROM node:22-slim
 WORKDIR /app
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/build ./build
+
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
